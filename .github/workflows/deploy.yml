@@ -2,7 +2,7 @@ name: Build and Push Docker Images to Alibaba Cloud
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
 
 env:
   # These environment variables resolve to secrets below; set the corresponding
@@ -52,3 +52,35 @@ jobs:
         run: |
           echo "Server images:" $SERVER_IMAGE:${{ github.sha }} $SERVER_IMAGE:latest
           echo "Web images:" $WEB_IMAGE:${{ github.sha }} $WEB_IMAGE:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait a moment for registry
+        run: sleep 5
+
+      - name: Deploy to remote server via SSH
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          key: ${{ secrets.DEPLOY_PRIVATE_KEY }}
+          passphrase: ${{ secrets.DEPLOY_PASSWORD }}
+          # Or use `password: ${{ secrets.DEPLOY_PASSWORD }}` if you prefer password auth
+          script: |
+            set -e
+            echo "Logging into container registry: ${{ secrets.ALICLOUD_REGISTRY }}"
+            docker login ${{ secrets.ALICLOUD_REGISTRY }} -u ${{ secrets.ALICLOUD_USERNAME }} -p ${{ secrets.ALICLOUD_PASSWORD }}
+            echo "Pulling images"
+            docker pull ${{ env.SERVER_IMAGE }}:${{ github.sha }}
+            docker pull ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            # tag to latest so compose using 'latest' works, if you use specific tags skip tagging
+            docker tag ${{ env.SERVER_IMAGE }}:${{ github.sha }} ${{ env.SERVER_IMAGE }}:latest || true
+            docker tag ${{ env.WEB_IMAGE }}:${{ github.sha }} ${{ env.WEB_IMAGE }}:latest || true
+            # change to directory containing your docker-compose.yml on remote
+            cd ${{ secrets.DEPLOY_COMPOSE_DIR }}
+            # optional: ensure compose pulls latest images, then recreate
+            docker-compose pull || true
+            docker-compose up -d --remove-orphans
