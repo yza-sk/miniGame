@@ -1,0 +1,10 @@
+Name: miniGame
+RestConf:
+  Host: 0.0.0.0
+  Port: 8888
+Database:
+  DSN: "root:password@tcp(mysql:3306)/minigame?parseTime=true&loc=UTC"
+Cors:
+  AllowedOrigins:
+    - http://localhost:5173
+    - http://localhost:8080

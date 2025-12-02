@@ -1,0 +1,62 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: minigame-mysql
+    restart: unless-stopped
+    environment:
+      # override via environment or .env file
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-minigame}
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - minigame-net
+
+  server:
+    image: minigame-server
+    build:
+      context: ./server
+    container_name: minigame-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "8888:8888"
+    networks:
+      - minigame-net
+    volumes:
+      - ./server/etc:/app/etc:ro
+    environment:
+      # Optional override: if you want server to use env-based DSN, set DATABASE_DSN.
+      DATABASE_DSN: ${DATABASE_DSN:-root:password@tcp(mysql:3306)/minigame?parseTime=true&loc=UTC}
+
+  web:
+    image: minigame-web
+    build:
+      context: ./web
+      args:
+        # Build-time API base used by the static bundle. Use localhost so browser (host) can reach backend.
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8888}
+    container_name: minigame-web
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+    networks:
+      - minigame-net
+
+networks:
+  minigame-net:
+    driver: bridge
+
+volumes:
+  db_data:
