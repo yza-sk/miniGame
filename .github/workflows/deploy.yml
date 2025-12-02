@@ -9,6 +9,10 @@ env:
   # secrets in your GitHub repository settings (Settings → Secrets & variables).
   SERVER_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server
   WEB_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web
+  # List of external images to mirror into your ACR. Set this as a repository secret
+  # named DEPENDENT_IMAGES containing space-separated image references, e.g.
+  # "mysql:8.0 redis:7.0"
+  DEPENDENT_IMAGES: ${{ secrets.DEPENDENT_IMAGES }}
  
 jobs:
   build-and-push:
@@ -31,6 +35,29 @@ jobs:
           registry: ${{ secrets.ALICLOUD_REGISTRY }}
           username: ${{ secrets.ALICLOUD_USERNAME }}
           password: ${{ secrets.ALICLOUD_PASSWORD }}
+
+      - name: Mirror dependent images into ACR (optional)
+        if: ${{ env.DEPENDENT_IMAGES != '' }}
+        run: |
+          set -e
+          echo "DEPENDENT_IMAGES='$DEPENDENT_IMAGES'"
+          for img in $DEPENDENT_IMAGES; do
+            echo "--- Mirroring $img ---"
+            # pull source image
+            docker pull "$img"
+            # extract name and tag
+            name="${img%%:*}"
+            tag="${img##*:}"
+            if [ "$name" = "$tag" ]; then
+              tag="latest"
+            fi
+            base=$(basename "$name")
+            target="${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/$base:$tag"
+            echo "Tagging $img -> $target"
+            docker tag "$img" "$target"
+            echo "Pushing $target"
+            docker push "$target"
+          done
 
       - name: Build and push server image
         uses: docker/build-push-action@v4
