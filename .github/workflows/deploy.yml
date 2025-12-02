@@ -132,6 +132,26 @@ jobs:
             echo "Pulling images"
             docker pull ${{ env.SERVER_IMAGE }}:${{ github.sha }}
             docker pull ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            # If dependent images were mirrored into ACR, pull them here and tag
+            # them back to their original names so docker-compose won't try to
+            # fetch them from docker.io.
+            if [ -n "${{ env.DEPENDENT_IMAGES }}" ]; then
+              echo "DEPENDENT_IMAGES='${{ env.DEPENDENT_IMAGES }}'"
+              for img in ${{ env.DEPENDENT_IMAGES }}; do
+                echo "--- Preparing dependent image: $img ---"
+                name="${img%%:*}"
+                tag="${img##*:}"
+                if [ "$name" = "$tag" ]; then
+                  tag="latest"
+                fi
+                base=$(basename "$name")
+                target="${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/$base:$tag"
+                echo "Pulling mirrored image $target"
+                docker pull "$target" || { echo "Failed to pull $target"; exit 1; }
+                echo "Tagging $target -> $name:$tag"
+                docker tag "$target" "$name:$tag" || true
+              done
+            fi
             # tag to latest so compose using 'latest' works, if you use specific tags skip tagging
             docker tag ${{ env.SERVER_IMAGE }}:${{ github.sha }} ${{ env.SERVER_IMAGE }}:latest || true
             docker tag ${{ env.WEB_IMAGE }}:${{ github.sha }} ${{ env.WEB_IMAGE }}:latest || true
