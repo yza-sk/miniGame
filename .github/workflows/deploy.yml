@@ -96,11 +96,8 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           port: ${{ env.DEPLOY_PORT }}
-          key: ${{ secrets.DEPLOY_PRIVATE_KEY }}
-          passphrase: ${{ secrets.DEPLOY_PRIVATE_KEY_PASSPHRASE }}
-          # If you prefer password auth instead of key, comment the two lines above and
-          # uncomment the next line (ensure `DEPLOY_PASSWORD` secret is set).
-          # password: ${{ secrets.DEPLOY_PASSWORD }}
+          # Using password-based SSH auth. Ensure `DEPLOY_PASSWORD` is set in Secrets.
+          password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             set -e
             echo "Logging into container registry: ${{ secrets.ALICLOUD_REGISTRY }}"
