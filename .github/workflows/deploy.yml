@@ -81,7 +81,7 @@ jobs:
         run: |
           echo "Server images:" $SERVER_IMAGE:${{ github.sha }} $SERVER_IMAGE:latest
           echo "Web images:" $WEB_IMAGE:${{ github.sha }} $WEB_IMAGE:latest
-
+ 
   deploy:
     needs: build-and-push
     environment: minigame
