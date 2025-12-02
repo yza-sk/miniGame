@@ -100,7 +100,7 @@ jobs:
           password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             set -e
-            echo "Logging into container registry: ${{ secrets.ALICLOUD_REGISTRY }}"
+            echo "Logging into container registry: ${{ secrets.ALICLOUD_REGISTRY_SECRET }}"
             docker login ${{ secrets.ALICLOUD_REGISTRY }} -u ${{ secrets.ALICLOUD_USERNAME }} -p ${{ secrets.ALICLOUD_PASSWORD }}
             echo "Pulling images"
             docker pull ${{ env.SERVER_IMAGE }}:${{ github.sha }}
@@ -109,7 +109,23 @@ jobs:
             docker tag ${{ env.SERVER_IMAGE }}:${{ github.sha }} ${{ env.SERVER_IMAGE }}:latest || true
             docker tag ${{ env.WEB_IMAGE }}:${{ github.sha }} ${{ env.WEB_IMAGE }}:latest || true
             # change to directory containing your docker-compose.yml on remote
-            cd ${{ secrets.DEPLOY_COMPOSE_DIR }}
-            # optional: ensure compose pulls latest images, then recreate
-            docker-compose pull || true
-            docker-compose up -d --remove-orphans
+            cd ${{ secrets.DEPLOY_COMPOSE_DIR }} || { echo "::error::failed to cd to ${{ secrets.DEPLOY_COMPOSE_DIR }}"; ls -la || true; exit 1; }
+            echo "Remote deploy dir: $(pwd)"
+            echo "Listing files in deploy dir:"; ls -la
+            # check for docker-compose file
+            if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+              echo "Found docker-compose file, proceeding to pull and up"
+              # try docker-compose, fall back to docker compose if needed
+              if command -v docker-compose >/dev/null 2>&1; then
+                docker-compose pull || true
+                docker-compose up -d --remove-orphans
+              else
+                docker compose pull || true
+                docker compose up -d --remove-orphans
+              fi
+            else
+              echo "::error::No docker-compose.yml or docker-compose.yaml found in $(pwd)."
+              echo "Please confirm DEPLOY_COMPOSE_DIR points to the directory containing your compose file on the remote host."
+              ls -la || true
+              exit 1
+            fi
