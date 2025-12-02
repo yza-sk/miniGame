@@ -62,15 +62,44 @@ jobs:
       - name: Wait a moment for registry
         run: sleep 5
 
+      - name: Validate required secrets and set defaults
+        run: |
+          set -e
+          if [ -z "${{ secrets.ALICLOUD_REGISTRY }}" ] || [ -z "${{ secrets.ALICLOUD_NAMESPACE }}" ]; then
+            echo "::error::ALICLOUD_REGISTRY or ALICLOUD_NAMESPACE is not set. Please set repository secrets."
+            exit 1
+          fi
+          if [ -z "${{ secrets.DEPLOY_HOST }}" ] || [ -z "${{ secrets.DEPLOY_USER }}" ] || [ -z "${{ secrets.DEPLOY_COMPOSE_DIR }}" ]; then
+            echo "::error::DEPLOY_HOST/DEPLOY_USER/DEPLOY_COMPOSE_DIR must be set."
+            exit 1
+          fi
+          # set default deploy port to 22 if not provided
+          if [ -z "${{ secrets.DEPLOY_PORT }}" ]; then
+            echo "DEPLOY_PORT=22" >> $GITHUB_ENV
+          else
+            echo "DEPLOY_PORT=${{ secrets.DEPLOY_PORT }}" >> $GITHUB_ENV
+          fi
+          # prepare image envs for later steps
+          echo "SERVER_IMAGE=${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server" >> $GITHUB_ENV
+          echo "WEB_IMAGE=${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web" >> $GITHUB_ENV
+
+      - name: Debug non-secret env
+        run: |
+          echo "SERVER_IMAGE=$SERVER_IMAGE"
+          echo "WEB_IMAGE=$WEB_IMAGE"
+          echo "DEPLOY_PORT=$DEPLOY_PORT"
+
       - name: Deploy to remote server via SSH
         uses: appleboy/ssh-action@v0.1.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
-          port: ${{ secrets.DEPLOY_PORT }}
+          port: ${{ env.DEPLOY_PORT }}
           key: ${{ secrets.DEPLOY_PRIVATE_KEY }}
-          passphrase: ${{ secrets.DEPLOY_PASSWORD }}
-          # Or use `password: ${{ secrets.DEPLOY_PASSWORD }}` if you prefer password auth
+          passphrase: ${{ secrets.DEPLOY_PRIVATE_KEY_PASSPHRASE }}
+          # If you prefer password auth instead of key, comment the two lines above and
+          # uncomment the next line (ensure `DEPLOY_PASSWORD` secret is set).
+          # password: ${{ secrets.DEPLOY_PASSWORD }}
           script: |
             set -e
             echo "Logging into container registry: ${{ secrets.ALICLOUD_REGISTRY }}"
