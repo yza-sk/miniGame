@@ -9,7 +9,7 @@ env:
   # secrets in your GitHub repository settings (Settings → Secrets & variables).
   SERVER_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server
   WEB_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web
-
+ 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
