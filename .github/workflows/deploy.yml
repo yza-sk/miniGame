@@ -57,6 +57,7 @@ jobs:
 
   deploy:
     needs: build-and-push
+    environment: minigame
     runs-on: ubuntu-latest
     steps:
       - name: Wait a moment for registry
