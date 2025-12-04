@@ -14,47 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: minigame
     steps:
-      - name: Validate deploy configuration
-        run: |
-          set -e
-          missing=0
-          required="SSH_HOST SSH_USER SSH_KEY SERVER_IMAGE WEB_IMAGE"
-          for v in $required; do
-            if [ -z "${!v}" ]; then
-              echo "::error file=.github/workflows/deploy.yml::Missing required env $v"
-              echo "Fix: set $v as a repository or environment secret (or export it in job env)."
-              missing=1
-            fi
-          done
-          # Basic private key sanity check
-          if [ -n "$SSH_KEY" ]; then
-            if ! echo "$SSH_KEY" | grep -q "BEGIN" ; then
-              echo "::error file=.github/workflows/deploy.yml::SSH_KEY does not look like a private key (missing BEGIN header)"
-              echo "Fix: ensure the full private key (with BEGIN/END lines) was copied into the secret."
-              missing=1
-            fi
-          fi
-          if [ "$missing" -eq 1 ]; then
-            echo "One or more required deployment variables are missing or invalid. Aborting."
-            exit 1
-          fi
-
-      - name: Write SSH key to file and test connectivity
-        run: |
-          set -e
-          # Write key to a temp file (ensure no trailing spaces/newlines issues)
-          printf "%s" "$SSH_KEY" > /tmp/deploy_key
-          chmod 600 /tmp/deploy_key
-          # Test SSH connectivity (non-interactive); allow unknown hosts
-          SSH_PORT_ACTUAL=${SSH_PORT:-22}
-          echo "Testing SSH connectivity to $SSH_USER@$SSH_HOST:$SSH_PORT_ACTUAL"
-          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes -p "$SSH_PORT_ACTUAL" "$SSH_USER@$SSH_HOST" 'echo CONNECT_OK' || (
-            echo "::error file=.github/workflows/deploy.yml::SSH connectivity test failed."
-            echo "Possible causes: wrong private key, public key not in authorized_keys, wrong username/port, or network/firewall blocking SSH."
-            echo "Fix: verify the private key, ensure the corresponding public key is added to ~/.ssh/authorized_keys for the target user, and confirm SSH port and user are correct."
-            exit 1
-          )
-          echo "SSH connectivity OK"
+      # build-and-push steps continue below
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -121,8 +81,58 @@ jobs:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
+      SSH_KEY_B64: ${{ secrets.SSH_KEY_B64 }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
     steps:
+      - name: Validate deploy configuration
+        run: |
+          set -e
+          missing=0
+          required="SSH_HOST SSH_USER SERVER_IMAGE WEB_IMAGE"
+          for v in $required; do
+            if [ -z "${!v}" ]; then
+              echo "::error file=.github/workflows/deploy.yml::Missing required env $v"
+              echo "Fix: set $v as a repository or environment secret (or export it in job env)."
+              missing=1
+            fi
+          done
+          if [ -z "$SSH_KEY" ] && [ -z "$SSH_KEY_B64" ]; then
+            echo "::error file=.github/workflows/deploy.yml::Missing SSH_KEY and SSH_KEY_B64; provide one of them as a secret"
+            echo "Fix: set SSH_KEY (raw private key) or SSH_KEY_B64 (base64-encoded private key) in repository or environment secrets."
+            missing=1
+          fi
+          if [ -n "$SSH_KEY" ]; then
+            if ! echo "$SSH_KEY" | grep -q "BEGIN" ; then
+              echo "::error file=.github/workflows/deploy.yml::SSH_KEY does not look like a private key (missing BEGIN header)"
+              echo "Fix: ensure the full private key (with BEGIN/END lines) was copied into the secret."
+              missing=1
+            fi
+          fi
+          if [ "$missing" -eq 1 ]; then
+            echo "One or more required deployment variables are missing or invalid. Aborting."
+            exit 1
+          fi
+
+      - name: Write SSH key to file and test connectivity
+        run: |
+          set -e
+          # Prefer SSH_KEY_B64 if present (avoids newline/CRLF issues when pasting into GitHub)
+          if [ -n "$SSH_KEY_B64" ]; then
+            echo "$SSH_KEY_B64" | base64 --decode > /tmp/deploy_key
+          else
+            printf "%s" "$SSH_KEY" > /tmp/deploy_key
+          fi
+          chmod 600 /tmp/deploy_key
+          # Test SSH connectivity (non-interactive); allow unknown hosts
+          SSH_PORT_ACTUAL=${SSH_PORT:-22}
+          echo "Testing SSH connectivity to $SSH_USER@$SSH_HOST:$SSH_PORT_ACTUAL"
+          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes -p "$SSH_PORT_ACTUAL" "$SSH_USER@$SSH_HOST" 'echo CONNECT_OK' || (
+            echo "::error file=.github/workflows/deploy.yml::SSH connectivity test failed."
+            echo "Possible causes: wrong private key, public key not in authorized_keys, wrong username/port, or network/firewall blocking SSH."
+            echo "Fix: verify the private key, ensure the corresponding public key is added to ~/.ssh/authorized_keys for the target user, and confirm SSH port and user are correct."
+            exit 1
+          )
+          echo "SSH connectivity OK"
       - name: Deploy to remote server via SSH
         if: ${{ env.SSH_HOST != '' && env.SSH_USER != '' && env.SSH_KEY != '' }}
         uses: appleboy/ssh-action@v0.1.7
