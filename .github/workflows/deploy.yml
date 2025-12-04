@@ -55,8 +55,7 @@ jobs:
       with:
         context: ./web
         push: true
-        build-args:
-          - VITE_API_BASE=http://${{ secrets.SSH_HOST }}:8080
+        build-args: VITE_API_BASE=http://${{ secrets.SSH_HOST }}:8080
         tags: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web:latest
 
     - name: Deploy to server
