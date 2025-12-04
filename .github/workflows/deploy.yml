@@ -1,161 +1,149 @@
-name: Build, Push and (Optional) Deploy
+name: Deploy MiniGame
 
 on:
   push:
     branches: [ main ]
-
-env:
-  SERVER_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server
-  WEB_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web
-  DEPENDENT_IMAGES: ${{ secrets.DEPENDENT_IMAGES }}
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
     environment: minigame
+
     steps:
-      # build-and-push steps continue below
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - uses: actions/checkout@v3
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '16'
 
-      - name: Login to Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ secrets.ALICLOUD_REGISTRY }}
-          username: ${{ secrets.ALICLOUD_USERNAME }}
-          password: ${{ secrets.ALICLOUD_PASSWORD }}
+    - name: Build backend
+      run: |
+        cd server
+        go build -v ./...
 
-      - name: Mirror dependent images into registry (optional)
-        if: ${{ env.DEPENDENT_IMAGES != '' }}
-        run: |
-          set -e
-          echo "DEPENDENT_IMAGES='$DEPENDENT_IMAGES'"
-          for img in $DEPENDENT_IMAGES; do
-            echo "--- Mirroring $img ---"
-            docker pull "$img"
-            name="${img%%:*}"
-            tag="${img##*:}"
-            if [ "$name" = "$tag" ]; then
-              tag="latest"
-            fi
-            base=$(basename "$name")
-            target="${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/$base:$tag"
-            docker tag "$img" "$target"
-            docker push "$target"
-          done
+    - name: Build frontend
+      run: |
+        cd web
+        npm install
+        npm run build
 
-      - name: Build and push server image
-        uses: docker/build-push-action@v4
-        with:
-          context: ./server
-          push: true
-          tags: |
-            ${{ env.SERVER_IMAGE }}:${{ github.sha }}
-            ${{ env.SERVER_IMAGE }}:latest
+    - name: Log in to AliCloud Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ secrets.ALICLOUD_REGISTRY }}
+        username: ${{ secrets.ALICLOUD_USERNAME }}
+        password: ${{ secrets.ALICLOUD_PASSWORD }}
 
-      - name: Build and push web image
-        uses: docker/build-push-action@v4
-        with:
-          context: ./web
-          push: true
-          tags: |
-            ${{ env.WEB_IMAGE }}:${{ github.sha }}
-            ${{ env.WEB_IMAGE }}:latest
+    - name: Build and push backend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./server
+        push: true
+        tags: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server:latest
 
-      - name: Show pushed image references
-        run: |
-          echo "Server images: $SERVER_IMAGE:${{ github.sha }} $SERVER_IMAGE:latest"
-          echo "Web images: $WEB_IMAGE:${{ github.sha }} $WEB_IMAGE:latest"
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./web
+        push: true
+        build-args:
+          VITE_API_BASE: http://${{ secrets.SSH_HOST }}:8080
+        tags: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web:latest
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    environment: minigame
-    env:
-      SSH_HOST: ${{ secrets.SSH_HOST }}
-      SSH_USER: ${{ secrets.SSH_USER }}
-      SSH_KEY: ${{ secrets.SSH_KEY }}
-      SSH_KEY_B64: ${{ secrets.SSH_KEY_B64 }}
-      SSH_PORT: ${{ secrets.SSH_PORT }}
-    steps:
-      - name: Validate deploy configuration
-        run: |
-          set -e
-          missing=0
-          required="SSH_HOST SSH_USER SERVER_IMAGE WEB_IMAGE"
-          for v in $required; do
-            if [ -z "${!v}" ]; then
-              echo "::error file=.github/workflows/deploy.yml::Missing required env $v"
-              echo "Fix: set $v as a repository or environment secret (or export it in job env)."
-              missing=1
-            fi
-          done
-          if [ -z "$SSH_KEY" ] && [ -z "$SSH_KEY_B64" ]; then
-            echo "::error file=.github/workflows/deploy.yml::Missing SSH_KEY and SSH_KEY_B64; provide one of them as a secret"
-            echo "Fix: set SSH_KEY (raw private key) or SSH_KEY_B64 (base64-encoded private key) in repository or environment secrets."
-            missing=1
-          fi
-          if [ -n "$SSH_KEY" ]; then
-            if ! echo "$SSH_KEY" | grep -q "BEGIN" ; then
-              echo "::error file=.github/workflows/deploy.yml::SSH_KEY does not look like a private key (missing BEGIN header)"
-              echo "Fix: ensure the full private key (with BEGIN/END lines) was copied into the secret."
-              missing=1
-            fi
-          fi
-          if [ "$missing" -eq 1 ]; then
-            echo "One or more required deployment variables are missing or invalid. Aborting."
-            exit 1
-          fi
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_KEY }}
+        script: |
+          # Update and install necessary packages
+          apt-get update && apt-get install -y docker.io docker-compose
 
-      - name: Write SSH key to file and test connectivity
-        run: |
-          set -e
-          # Prefer SSH_KEY_B64 if present (avoids newline/CRLF issues when pasting into GitHub)
-          if [ -n "$SSH_KEY_B64" ]; then
-            echo "$SSH_KEY_B64" | base64 --decode > /tmp/deploy_key
-          else
-            printf "%s" "$SSH_KEY" > /tmp/deploy_key
-          fi
-          chmod 600 /tmp/deploy_key
-          # Test SSH connectivity (non-interactive); allow unknown hosts
-          SSH_PORT_ACTUAL=${SSH_PORT:-22}
-          echo "Testing SSH connectivity to $SSH_USER@$SSH_HOST:$SSH_PORT_ACTUAL"
-          ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no -o BatchMode=yes -p "$SSH_PORT_ACTUAL" "$SSH_USER@$SSH_HOST" 'echo CONNECT_OK' || (
-            echo "::error file=.github/workflows/deploy.yml::SSH connectivity test failed."
-            echo "Possible causes: wrong private key, public key not in authorized_keys, wrong username/port, or network/firewall blocking SSH."
-            echo "Fix: verify the private key, ensure the corresponding public key is added to ~/.ssh/authorized_keys for the target user, and confirm SSH port and user are correct."
-            exit 1
-          )
-          echo "SSH connectivity OK"
-      - name: Deploy to remote server via SSH
-        if: ${{ env.SSH_HOST != '' && env.SSH_USER != '' && env.SSH_KEY != '' }}
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ env.SSH_HOST }}
-          username: ${{ env.SSH_USER }}
-          key: ${{ env.SSH_KEY }}
-          port: ${{ env.SSH_PORT }}
-          script: |
-            set -e
-            echo "Creating deploy directory"
-            mkdir -p /home/deploy/miniGame
-            echo "Pulling latest images"
-            docker pull ${{ env.SERVER_IMAGE }}:latest
-            docker pull ${{ env.WEB_IMAGE }}:latest
-            echo "Assuming docker-compose.yml is present at /home/deploy/miniGame/docker-compose.yml"
-            echo "If you want the workflow to push the compose file, add an scp step or extend this script."
-            # Ensure environment defaults on remote (use admin/password as requested)
-            export MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
-            export MYSQL_USER=${{ secrets.MYSQL_USER }}
-            export MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
-            export MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
-            export DATABASE_DSN=${{ env.SERVER_IMAGE }}
-            cd /home/deploy/miniGame
-            docker compose pull || true
-            docker compose up -d --remove-orphans
+          # Start Docker service if not running
+          systemctl start docker
+          systemctl enable docker
+
+          # Create data directory if not exists
+          mkdir -p /home/data/mysql
+          mkdir -p /home/data/server_etc
+          mkdir -p /home/data/web_static
+
+          # Create or update docker-compose.yml on server
+          cat > /home/docker-compose.yml << 'EOF'
+          version: "3.8"
+
+          services:
+            mysql:
+              image: mysql:8.0
+              container_name: minigame-mysql
+              restart: unless-stopped
+              environment:
+                MYSQL_ROOT_PASSWORD: password
+                MYSQL_DATABASE: minigame
+                MYSQL_USER: admin
+                MYSQL_PASSWORD: password
+              volumes:
+                - /home/data/mysql:/var/lib/mysql
+              ports:
+                - "3306:3306"
+              healthcheck:
+                test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+                interval: 10s
+                timeout: 5s
+                retries: 5
+              networks:
+                - minigame-net
+
+            server:
+              image: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server:latest
+              container_name: minigame-server
+              restart: unless-stopped
+              depends_on:
+                mysql:
+                  condition: service_healthy
+              ports:
+                - "8080:8888"
+              networks:
+                - minigame-net
+              volumes:
+                - /home/data/server_etc:/app/etc:ro
+              environment:
+                DATABASE_DSN: admin:password@tcp(mysql:3306)/minigame?parseTime=true&loc=UTC
+
+            web:
+              image: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web:latest
+              container_name: minigame-web
+              restart: unless-stopped
+              depends_on:
+                - server
+              ports:
+                - "80:80"
+              networks:
+                - minigame-net
+              volumes:
+                - /home/data/web_static:/usr/share/nginx/html:ro
+
+          networks:
+            minigame-net:
+              driver: bridge
+          EOF
+
+          # Pull latest images
+          docker login -u ${{ secrets.ALICLOUD_USERNAME }} -p ${{ secrets.ALICLOUD_PASSWORD }} ${{ secrets.ALICLOUD_REGISTRY }}
+          docker pull ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server:latest
+          docker pull ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web:latest
+          docker pull mysql:8.0
+
+          # Deploy with docker-compose
+          cd /home
+          docker-compose up -d
