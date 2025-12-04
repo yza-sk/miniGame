@@ -20,9 +20,15 @@ func main() {
 		log.Fatalf("config error: %v", err)
 	}
 
+	// Allow overriding DSN from environment for containerized deployments
+	if env := os.Getenv("DATABASE_DSN"); env != "" {
+		cfg.Database.DSN = env
+		log.Printf("Database DSN from env: %s", cfg.Database.DSN)
+	}
+
 	// If DSN not present in config (YAML mapping issues), fall back to sensible default
 	if cfg.Database.DSN == "" {
-		cfg.Database.DSN = "root:password@tcp(mysql:3306)/minigame?parseTime=true&loc=UTC"
+		cfg.Database.DSN = "admin:password@tcp(mysql:3306)/minigame?parseTime=true&loc=UTC"
 		log.Printf("Database DSN not found in config, using default DSN: %s", cfg.Database.DSN)
 	} else {
 		log.Printf("Database DSN from config: %s", cfg.Database.DSN)

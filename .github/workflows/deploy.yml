@@ -1,24 +1,18 @@
-name: Build and Push Docker Images to Alibaba Cloud
+name: Build, Push and (Optional) Deploy
 
 on:
   push:
     branches: [ main ]
 
 env:
-  # These environment variables resolve to secrets below; set the corresponding
-  # secrets in your GitHub repository settings (Settings → Secrets & variables).
   SERVER_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server
   WEB_IMAGE: ${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web
-  # List of external images to mirror into your ACR. Set this as a repository secret
-  # named DEPENDENT_IMAGES containing space-separated image references, e.g.
-  # "mysql:8.0 redis:7.0"
   DEPENDENT_IMAGES: ${{ secrets.DEPENDENT_IMAGES }}
- 
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     environment: minigame
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,23 +23,21 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Login to Alibaba Cloud Container Registry
+      - name: Login to Container Registry
         uses: docker/login-action@v2
         with:
           registry: ${{ secrets.ALICLOUD_REGISTRY }}
           username: ${{ secrets.ALICLOUD_USERNAME }}
           password: ${{ secrets.ALICLOUD_PASSWORD }}
 
-      - name: Mirror dependent images into ACR (optional)
+      - name: Mirror dependent images into registry (optional)
         if: ${{ env.DEPENDENT_IMAGES != '' }}
         run: |
           set -e
           echo "DEPENDENT_IMAGES='$DEPENDENT_IMAGES'"
           for img in $DEPENDENT_IMAGES; do
             echo "--- Mirroring $img ---"
-            # pull source image
             docker pull "$img"
-            # extract name and tag
             name="${img%%:*}"
             tag="${img##*:}"
             if [ "$name" = "$tag" ]; then
@@ -53,9 +45,7 @@ jobs:
             fi
             base=$(basename "$name")
             target="${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/$base:$tag"
-            echo "Tagging $img -> $target"
             docker tag "$img" "$target"
-            echo "Pushing $target"
             docker push "$target"
           done
 
@@ -79,100 +69,37 @@ jobs:
 
       - name: Show pushed image references
         run: |
-          echo "Server images:" $SERVER_IMAGE:${{ github.sha }} $SERVER_IMAGE:latest
-          echo "Web images:" $WEB_IMAGE:${{ github.sha }} $WEB_IMAGE:latest
- 
+          echo "Server images: $SERVER_IMAGE:${{ github.sha }} $SERVER_IMAGE:latest"
+          echo "Web images: $WEB_IMAGE:${{ github.sha }} $WEB_IMAGE:latest"
+
   deploy:
     needs: build-and-push
-    environment: minigame
     runs-on: ubuntu-latest
+    environment: minigame
     steps:
-      - name: Wait a moment for registry
-        run: sleep 5
-
-      - name: Validate required secrets and set defaults
-        run: |
-          set -e
-          if [ -z "${{ secrets.ALICLOUD_REGISTRY }}" ] || [ -z "${{ secrets.ALICLOUD_NAMESPACE }}" ]; then
-            echo "::error::ALICLOUD_REGISTRY or ALICLOUD_NAMESPACE is not set. Please set repository secrets."
-            exit 1
-          fi
-          if [ -z "${{ secrets.DEPLOY_HOST }}" ] || [ -z "${{ secrets.DEPLOY_USER }}" ] || [ -z "${{ secrets.DEPLOY_COMPOSE_DIR }}" ]; then
-            echo "::error::DEPLOY_HOST/DEPLOY_USER/DEPLOY_COMPOSE_DIR must be set."
-            exit 1
-          fi
-          # set default deploy port to 22 if not provided
-          if [ -z "${{ secrets.DEPLOY_PORT }}" ]; then
-            echo "DEPLOY_PORT=22" >> $GITHUB_ENV
-          else
-            echo "DEPLOY_PORT=${{ secrets.DEPLOY_PORT }}" >> $GITHUB_ENV
-          fi
-          # prepare image envs for later steps
-          echo "SERVER_IMAGE=${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-server" >> $GITHUB_ENV
-          echo "WEB_IMAGE=${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/minigame-web" >> $GITHUB_ENV
-
-      - name: Debug non-secret env
-        run: |
-          echo "SERVER_IMAGE=$SERVER_IMAGE"
-          echo "WEB_IMAGE=$WEB_IMAGE"
-          echo "DEPLOY_PORT=$DEPLOY_PORT"
-
       - name: Deploy to remote server via SSH
-        uses: appleboy/ssh-action@v0.1.5
+        if: ${{ secrets.SSH_HOST != '' && secrets.SSH_USER != '' && secrets.SSH_KEY != '' }}
+        uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          port: ${{ env.DEPLOY_PORT }}
-          # Using password-based SSH auth. Ensure `DEPLOY_PASSWORD` is set in Secrets.
-          password: ${{ secrets.DEPLOY_PASSWORD }}
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
           script: |
             set -e
-            echo "Logging into container registry: ${{ secrets.ALICLOUD_REGISTRY_SECRET }}"
-            docker login ${{ secrets.ALICLOUD_REGISTRY }} -u ${{ secrets.ALICLOUD_USERNAME }} -p ${{ secrets.ALICLOUD_PASSWORD }}
-            echo "Pulling images"
-            docker pull ${{ env.SERVER_IMAGE }}:${{ github.sha }}
-            docker pull ${{ env.WEB_IMAGE }}:${{ github.sha }}
-            # If dependent images were mirrored into ACR, pull them here and tag
-            # them back to their original names so docker-compose won't try to
-            # fetch them from docker.io.
-            if [ -n "${{ env.DEPENDENT_IMAGES }}" ]; then
-              echo "DEPENDENT_IMAGES='${{ env.DEPENDENT_IMAGES }}'"
-              for img in ${{ env.DEPENDENT_IMAGES }}; do
-                echo "--- Preparing dependent image: $img ---"
-                name="${img%%:*}"
-                tag="${img##*:}"
-                if [ "$name" = "$tag" ]; then
-                  tag="latest"
-                fi
-                base=$(basename "$name")
-                target="${{ secrets.ALICLOUD_REGISTRY }}/${{ secrets.ALICLOUD_NAMESPACE }}/$base:$tag"
-                echo "Pulling mirrored image $target"
-                docker pull "$target" || { echo "Failed to pull $target"; exit 1; }
-                echo "Tagging $target -> $name:$tag"
-                docker tag "$target" "$name:$tag" || true
-              done
-            fi
-            # tag to latest so compose using 'latest' works, if you use specific tags skip tagging
-            docker tag ${{ env.SERVER_IMAGE }}:${{ github.sha }} ${{ env.SERVER_IMAGE }}:latest || true
-            docker tag ${{ env.WEB_IMAGE }}:${{ github.sha }} ${{ env.WEB_IMAGE }}:latest || true
-            # change to directory containing your docker-compose.yml on remote
-            cd ${{ secrets.DEPLOY_COMPOSE_DIR }} || { echo "::error::failed to cd to ${{ secrets.DEPLOY_COMPOSE_DIR }}"; ls -la || true; exit 1; }
-            echo "Remote deploy dir: $(pwd)"
-            echo "Listing files in deploy dir:"; ls -la
-            # check for docker-compose file
-            if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
-              echo "Found docker-compose file, proceeding to pull and up"
-              # try docker-compose, fall back to docker compose if needed
-              if command -v docker-compose >/dev/null 2>&1; then
-                docker-compose pull || true
-                docker-compose up -d --remove-orphans
-              else
-                docker compose pull || true
-                docker compose up -d --remove-orphans
-              fi
-            else
-              echo "::error::No docker-compose.yml or docker-compose.yaml found in $(pwd)."
-              echo "Please confirm DEPLOY_COMPOSE_DIR points to the directory containing your compose file on the remote host."
-              ls -la || true
-              exit 1
-            fi
+            echo "Creating deploy directory"
+            mkdir -p /home/deploy/miniGame
+            echo "Pulling latest images"
+            docker pull ${{ env.SERVER_IMAGE }}:latest
+            docker pull ${{ env.WEB_IMAGE }}:latest
+            echo "Assuming docker-compose.yml is present at /home/deploy/miniGame/docker-compose.yml"
+            echo "If you want the workflow to push the compose file, add an scp step or extend this script."
+            # Ensure environment defaults on remote (use admin/password as requested)
+            export MYSQL_ROOT_PASSWORD=${{ secrets.MYSQL_ROOT_PASSWORD }}
+            export MYSQL_USER=${{ secrets.MYSQL_USER }}
+            export MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}
+            export MYSQL_DATABASE=${{ secrets.MYSQL_DATABASE }}
+            export DATABASE_DSN=${{ env.SERVER_IMAGE }}
+            cd /home/deploy/miniGame
+            docker compose pull || true
+            docker compose up -d --remove-orphans
