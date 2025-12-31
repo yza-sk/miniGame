@@ -1,0 +1,19 @@
+Name: rank_list_api
+Host: 0.0.0.0
+Port: 8888
+
+DriverConf:
+  host: localhost
+  port: 3306
+  user: root
+  pass: password
+  databases: test
+  dsn: ""
+
+db:
+  dsn: "root:password@tcp(localhost:3306)/test"
+  driver_name: mysql
+
+Nacos:
+  Host:
+    - http://8.148.21.13/nacos

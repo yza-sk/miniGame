@@ -1,65 +1,36 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: minigame-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-minigame}
-      MYSQL_USER: ${MYSQL_USER:-admin}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
-    volumes:
-      - /home/data/mysql:/var/lib/mysql
+  # 后端服务
+  backend:
+    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_backend:v1.0.0
+    container_name: minigame-backend
     ports:
-      - "3306:3306"
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - minigame-net
-
-  server:
-    image: ${SERVER_IMAGE:-minigame-server:latest}
-    build:
-      context: ./server
-    container_name: minigame-server
-    restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
-    ports:
-      # host:container -> expose host 8080, container listens on 8888 by default
-      - "8080:8888"
-    networks:
-      - minigame-net
-    volumes:
-      - /home/data/server_etc:/app/etc:ro
+      - "8888:8888"
     environment:
-      # Use admin/password for DB user as requested
-      DATABASE_DSN: ${DATABASE_DSN:-admin:password@tcp(mysql:3306)/minigame?parseTime=true&loc=UTC}
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./backend/etc:/app/etc:ro
+    networks:
+      - minigame
 
-  web:
-    image: ${WEB_IMAGE:-minigame-web:latest}
-    build:
-      context: ./web
-      args:
-        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080}
-    container_name: minigame-web
-    restart: unless-stopped
-    depends_on:
-      - server
+  # 前端服务
+  frontend:
+    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_frontend:v1.0.0
+    container_name: minigame-frontend
     ports:
       - "80:80"
+    environment:
+      - TZ=Asia/Shanghai
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
-      - minigame-net
-    volumes:
-      - /home/data/web_static:/usr/share/nginx/html:ro
+      - minigame
 
 networks:
-  minigame-net:
+  minigame:
     driver: bridge
 
+volumes:
+  backend-config:

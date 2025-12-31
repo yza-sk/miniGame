@@ -13,7 +13,7 @@ ENV VITE_API_BASE=${VITE_API_BASE}
 RUN npm run build
 
 # Stage 2: Serve with Nginx
-FROM nginx:latest AS runtime
+FROM nginx:alpine AS runtime
 WORKDIR /usr/share/nginx/html
 COPY --from=build /app/dist .
 COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -1,0 +1,40 @@
+type (
+	// 提交成绩
+	SubmitReq {
+		Name    string `json:"name" form:"name"`
+		Score   int    `json:"score" form:"score"`
+		Comment string `json:"comment" form:"comment"`
+	}
+	SubmitResp  {}
+)
+
+type (
+	// 成绩信息
+	Grade {
+		Id       int64  `json:"id"`
+		Name     string `json:"name"`
+		Score    int    `json:"score"`
+		Comment  string `json:"comment"`
+		Finished string `json:"finished"`
+	}
+)
+
+type (
+	// 查看榜单
+	ListReq {
+		Limit    int    `json:"limit" form:"limit"`
+		Classify string `json:"classify" form:"classify"`
+	}
+	ListResp {
+		GradeList []Grade `json:"grade_list"`
+	}
+)
+
+service rank_list_api {
+	@handler Submit
+	post /api/rank_list/submit (SubmitReq) returns (SubmitResp)
+
+	@handler GetQuery
+	get /api/rank_list/query (ListReq) returns (ListResp)
+}
+
