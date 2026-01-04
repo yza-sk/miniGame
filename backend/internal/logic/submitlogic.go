@@ -6,6 +6,7 @@ package logic
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"rank_list/internal/model"
 	"rank_list/internal/svc"
@@ -30,9 +31,10 @@ func NewSubmitLogic(ctx context.Context, svcCtx *svc.ServiceContext) *SubmitLogi
 
 func (l *SubmitLogic) Submit(req *types.SubmitReq) (resp *types.SubmitResp, err error) {
 	grade := &model.Grade{
-		Name:    req.Name,
-		Score:   int64(req.Score),
-		Comment: sql.NullString{String: req.Comment, Valid: req.Comment != ""},
+		Name:     req.Name,
+		Score:    int64(req.Score),
+		Comment:  sql.NullString{String: req.Comment, Valid: req.Comment != ""},
+		Finished: time.Now(),
 	}
 	_, err = l.svcCtx.Sql.Insert(l.ctx, grade)
 

@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # 后端服务
   backend:
-    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_backend:v1.0.0
+    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_backend:v2.0
     container_name: minigame-backend
     ports:
       - "8888:8888"
@@ -16,15 +16,14 @@ services:
 
   # 前端服务
   frontend:
-    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_frontend:v1.0.0
+    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_frontend:v2.0
     container_name: minigame-frontend
     ports:
       - "80:80"
     environment:
       - TZ=Asia/Shanghai
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     networks:
       - minigame
 

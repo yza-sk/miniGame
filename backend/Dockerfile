@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o rank_list_api cmd/main
 FROM alpine:latest
 
 # 安装必要的运行时依赖
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata wget
 
 # 创建非root用户
 RUN addgroup -g 1000 -S appgroup && \
@@ -42,9 +42,5 @@ USER appuser
 # 暴露端口
 EXPOSE 8888
 
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8888/health || exit 1
-
-# 启动命令
-CMD ["./rank_list_api", "-f", "etc/ranklistapi.yaml"]
+# 启动命令：执行构建出的二进制
+CMD ["./rank_list_api"]

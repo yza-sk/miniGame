@@ -39,6 +39,14 @@ watchEffect(async () => {
 })
 
 function fmt(s:string){
+  if(!s) return s
+  // 后端返回格式 `YYYY-MM-DD HH:MM:SS`，手动解析为本地时间
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/)
+  if(m){
+    const y = Number(m[1]), mo = Number(m[2]) - 1, d = Number(m[3])
+    const hh = Number(m[4]), mm = Number(m[5]), ss = Number(m[6])
+    return new Date(y, mo, d, hh, mm, ss).toLocaleString()
+  }
   try{ return new Date(s).toLocaleString() }catch{ return s }
 }
 </script>

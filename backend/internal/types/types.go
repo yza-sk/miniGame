@@ -11,7 +11,7 @@ type Grade struct {
 	Finished string `json:"finished"`
 }
 
-type ListReq struct {
+type ListReq struct {   
 	Limit    int    `json:"limit" form:"limit"`
 	Classify string `json:"classify" form:"classify"`
 }
