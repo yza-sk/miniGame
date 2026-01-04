@@ -4,7 +4,7 @@ services:
   # 后端服务
   backend:
     image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_backend:v2.0
-    container_name: minigame-backend
+    container_name: minigame_backend
     ports:
       - "8888:8888"
     environment:
@@ -12,23 +12,23 @@ services:
     volumes:
       - ./backend/etc:/app/etc:ro
     networks:
-      - minigame
+      - server
 
   # 前端服务
   frontend:
-    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_frontend:v2.0
-    container_name: minigame-frontend
+    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_frontend:v2.1
+    container_name: minigame_frontend
     ports:
-      - "80:80"
+      - "10000:10000"
     environment:
       - TZ=Asia/Shanghai
     depends_on:
       - backend
     networks:
-      - minigame
+      - server
 
 networks:
-  minigame:
+  server:
     driver: bridge
 
 volumes:
