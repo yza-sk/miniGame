@@ -4,14 +4,13 @@
 package types
 
 type Grade struct {
-	Id       int64  `json:"id"`
 	Name     string `json:"name"`
 	Score    int    `json:"score"`
 	Comment  string `json:"comment"`
 	Finished string `json:"finished"`
 }
 
-type ListReq struct {   
+type ListReq struct {
 	Limit    int    `json:"limit" form:"limit"`
 	Classify string `json:"classify" form:"classify"`
 }

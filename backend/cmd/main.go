@@ -6,9 +6,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 
 	"rank_list/internal/config"
 	"rank_list/internal/handler"
@@ -18,22 +15,14 @@ import (
 	"github.com/zeromicro/go-zero/rest"
 )
 
-func getConfigPath() string {
-	exePath, err := os.Executable()
-	if err != nil {
-		log.Fatalf("Failed to get executable path: %v", err)
-	}
-	exeDir := filepath.Dir(exePath)
-	configPath := filepath.Join(exeDir, "etc", "ranklistapi.yaml")
-	return configPath
-}
+var configFile = flag.String("f", "etc/ranklistapi.yaml", "the config file")
 
 func main() {
 	flag.Parse()
 
 	var c config.Config
+	conf.MustLoad(*configFile, &c)
 
-	conf.MustLoad(getConfigPath(), &c)
 	server := rest.MustNewServer(c.RestConf)
 	defer server.Stop()
 

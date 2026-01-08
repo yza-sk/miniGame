@@ -36,7 +36,6 @@ func (l *GetQueryLogic) GetQuery(req *types.ListReq) (resp *types.ListResp, err 
 
 		for _, grade := range gradeList {
 			respGrade := types.Grade{
-				Id:       grade.Id,
 				Name:     grade.Name,
 				Score:    int(grade.Score),                             // 将int64转换为int
 				Comment:  grade.Comment.String,                         // 将sql.NullString转换为string
@@ -45,7 +44,7 @@ func (l *GetQueryLogic) GetQuery(req *types.ListReq) (resp *types.ListResp, err 
 			respGradeList = append(respGradeList, respGrade)
 		}
 
-	}else if req.Classify == "sort" {
+	} else if req.Classify == "sort" {
 		gradeList, err := l.svcCtx.Sql.FindTop(l.ctx, req.Limit)
 		if err != nil {
 			return nil, err
@@ -53,7 +52,6 @@ func (l *GetQueryLogic) GetQuery(req *types.ListReq) (resp *types.ListResp, err 
 
 		for _, grade := range gradeList {
 			respGrade := types.Grade{
-				Id:       grade.Id,
 				Name:     grade.Name,
 				Score:    int(grade.Score),                             // 将int64转换为int
 				Comment:  grade.Comment.String,                         // 将sql.NullString转换为string
