@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # 后端服务
   backend:
-    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_backend:v2.0
+    image: crpi-l14b1sc286yk94go.cn-hangzhou.personal.cr.aliyuncs.com/galgame/minigame_backend:v2.1
     container_name: minigame_backend
     ports:
       - "8888:8888"
